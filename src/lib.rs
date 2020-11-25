@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
 #[derive(Clone, Copy)]
@@ -265,17 +265,7 @@ impl Formula {
         let mut ids = Vec::with_capacity(a.width());
 
         for i in 0..a.width() {
-            let t1 = inner.not(a.ids[i]);
-            let t2 = inner.not(b.ids[i]);
-            let t3 = inner.and(t1, b.ids[i]);
-            let t4 = inner.and(a.ids[i], t2);
-
-            let id = inner.or(t3, t4);
-
-            inner.decr(t1);
-            inner.decr(t2);
-            inner.decr(t3);
-            inner.decr(t4);
+            let id = xor_help(&mut inner, a.ids[i], b.ids[i]);
 
             ids.push(id);
         }
@@ -345,6 +335,48 @@ impl Formula {
         }
     }
 
+    pub fn addc(&mut self, a: &Word, b: &Word) -> (Word, Word) {
+        assert_eq!(a.width(), b.width());
+
+        let mut inner = self.0.borrow_mut();
+        let mut ids = Vec::with_capacity(a.width());
+        let mut carry = inner.val(false);
+
+        for i in 0..a.width() {
+            let (s, c) = full_adder_help(&mut inner, a.ids[i], b.ids[i], carry);
+            inner.decr(carry);
+            carry = c;
+
+            ids.push(s);
+        }
+
+        (
+            Word {
+                formula: self.shallow_clone(),
+                ids,
+            },
+            Word {
+                formula: self.shallow_clone(),
+                ids: vec![carry],
+            },
+        )
+    }
+
+    pub fn add(&mut self, a: &Word, b: &Word) -> Word {
+        self.addc(a, b).0
+    }
+
+    pub fn rotl(&mut self, a: &Word, k: usize) -> Word {
+        let x = self.shl(a, k);
+        let y = self.shr(a, a.width() - k);
+
+        self.or(&x, &y)
+    }
+
+    pub fn rotr(&mut self, a: &Word, k: usize) -> Word {
+        self.rotl(a, a.width() - k)
+    }
+
     fn gc_live_count(&self) -> usize {
         let mut count = 0;
 
@@ -356,6 +388,37 @@ impl Formula {
 
         count
     }
+}
+
+fn xor_help(inner: &mut RefMut<_Formula>, a: u32, b: u32) -> u32 {
+    let t1 = inner.not(a);
+    let t2 = inner.not(b);
+    let t3 = inner.and(t1, b);
+    let t4 = inner.and(a, t2);
+
+    let id = inner.or(t3, t4);
+
+    inner.decr(t1);
+    inner.decr(t2);
+    inner.decr(t3);
+    inner.decr(t4);
+
+    id
+}
+
+fn full_adder_help(inner: &mut RefMut<_Formula>, a: u32, b: u32, c: u32) -> (u32, u32) {
+    let t1 = xor_help(inner, a, b);
+    let s = xor_help(inner, t1, c);
+
+    let t2 = inner.and(a, b);
+    let t3 = inner.and(c, t1);
+    let c = inner.or(t2, t3);
+
+    inner.decr(t1);
+    inner.decr(t2);
+    inner.decr(t3);
+
+    (s, c)
 }
 
 pub struct Word {
@@ -487,6 +550,27 @@ mod test {
     }
 
     #[test]
+    fn add_01() {
+        let mut formula = Formula::new();
+
+        for a in 0..=15 {
+            let x = formula.from_u64(a, 4);
+
+            for b in 0..=15 {
+                let y = formula.from_u64(b, 4);
+                let z = formula.add(&x, &y);
+
+                let c_actual = formula.try_to_u64(&z).unwrap();
+                let c_expected = (a + b) & 0x0f;
+
+                assert_eq!(c_actual, c_expected);
+            }
+        }
+
+        assert_eq!(formula.gc_live_count(), 0);
+    }
+
+    #[test]
     fn not_01() {
         let mut formula = Formula::new();
 
@@ -533,6 +617,44 @@ mod test {
 
                 let c_actual = formula.try_to_u64(&z).unwrap();
                 let c_expected = (a >> k) & 0xf;
+
+                assert_eq!(c_actual, c_expected);
+            }
+        }
+
+        assert_eq!(formula.gc_live_count(), 0);
+    }
+
+    #[test]
+    fn rotl_01() {
+        let mut formula = Formula::new();
+
+        for a in 0..=255 {
+            for k in 0..=8 {
+                let x = formula.from_u64(a, 8);
+                let z = formula.rotl(&x, k);
+
+                let c_actual = formula.try_to_u64(&z).unwrap();
+                let c_expected = (a as u8).rotate_left(k as u32) as u64;
+
+                assert_eq!(c_actual, c_expected);
+            }
+        }
+
+        assert_eq!(formula.gc_live_count(), 0);
+    }
+
+    #[test]
+    fn rotr_01() {
+        let mut formula = Formula::new();
+
+        for a in 0..=255 {
+            for k in 0..=8 {
+                let x = formula.from_u64(a, 8);
+                let z = formula.rotr(&x, k);
+
+                let c_actual = formula.try_to_u64(&z).unwrap();
+                let c_expected = (a as u8).rotate_right(k as u32) as u64;
 
                 assert_eq!(c_actual, c_expected);
             }
