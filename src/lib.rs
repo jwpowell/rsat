@@ -1,12 +1,14 @@
 #![allow(unused)]
 
 use std::cell::{RefCell, RefMut};
+use std::cmp;
+use std::collections::HashMap;
 use std::rc::Rc;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Bit {
-    Val(bool),
     Var,
+    Val(bool),
 
     And(u32, u32),
     Or(u32, u32),
@@ -224,6 +226,10 @@ impl Formula {
         Some(value)
     }
 
+    pub fn zero(&mut self, width: usize) -> Word {
+        self.from_u64(0, width)
+    }
+
     pub fn and(&mut self, a: &Word, b: &Word) -> Word {
         assert_eq!(a.width(), b.width());
 
@@ -364,6 +370,80 @@ impl Formula {
 
     pub fn add(&mut self, a: &Word, b: &Word) -> Word {
         self.addc(a, b).0
+    }
+
+    pub fn slice(&self, a: &Word, lo: usize, hi: usize) -> Word {
+        let mut inner = self.0.borrow_mut();
+        let ids: Vec<u32> = a.ids[lo..=hi].iter().copied().collect();
+
+        for id in &ids {
+            inner.incr(*id);
+        }
+
+        Word {
+            formula: self.shallow_clone(),
+            ids,
+        }
+    }
+
+    pub fn concat(&self, a: &Word, b: &Word) -> Word {
+        let mut inner = self.0.borrow_mut();
+        let ids: Vec<u32> = a.ids.iter().chain(b.ids.iter()).copied().collect();
+
+        for id in &ids {
+            inner.incr(*id);
+        }
+
+        assert_eq!(ids.len(), a.width() + b.width());
+
+        Word {
+            formula: self.shallow_clone(),
+            ids,
+        }
+    }
+
+    pub fn cond(&mut self, test: &Word, yes: &Word, no: &Word) -> Word {
+        assert_eq!(yes.width(), no.width());
+        assert_eq!(test.width(), 1);
+
+        let mut inner = self.0.borrow_mut();
+        let mut ids = Vec::with_capacity(yes.width());
+        let test_bit = test.ids[0];
+        let t1 = inner.not(test_bit);
+
+        for i in 0..yes.width() {
+            let t2 = inner.and(test_bit, yes.ids[i]);
+            let t3 = inner.and(t1, no.ids[i]);
+            let id = inner.or(t2, t3);
+
+            inner.decr(t2);
+            inner.decr(t3);
+
+            ids.push(id);
+        }
+
+        inner.decr(t1);
+
+        Word {
+            formula: self.shallow_clone(),
+            ids,
+        }
+    }
+
+    pub fn mul(&mut self, a: &Word, b: &Word) -> Word {
+        assert_eq!(a.width(), b.width());
+
+        let zero = self.zero(a.width());
+        let mut sum = zero.clone();
+
+        for i in 0..a.width() {
+            let test = self.slice(b, i, i);
+            let v = self.cond(&test, &a, &zero);
+            let v = self.shl(&v, i);
+            sum = self.add(&sum, &v);
+        }
+
+        sum
     }
 
     pub fn rotl(&mut self, a: &Word, k: usize) -> Word {
@@ -571,6 +651,51 @@ mod test {
     }
 
     #[test]
+    fn mul_01() {
+        let mut formula = Formula::new();
+
+        for a in 0..=15 {
+            let x = formula.from_u64(a, 4);
+
+            for b in 0..=15 {
+                let y = formula.from_u64(b, 4);
+                let z = formula.mul(&x, &y);
+
+                let c_actual = formula.try_to_u64(&z).unwrap();
+                let c_expected = (a * b) & 0x0f;
+
+                assert_eq!(c_actual, c_expected);
+            }
+        }
+
+        assert_eq!(formula.gc_live_count(), 0);
+    }
+
+    #[test]
+    fn mul_02() {
+        let mut formula = Formula::new();
+
+        let a = formula.from_u64(12_345, 64);
+        let b = formula.from_u64(54_321, 64);
+
+        let c = formula.mul(&a, &b);
+
+        assert_eq!(formula.try_to_u64(&c), Some(670_592_745));
+    }
+
+    #[test]
+    fn mul_03() {
+        let mut formula = Formula::new();
+
+        let a = formula.word(64);
+        let b = formula.word(64);
+
+        let c = formula.mul(&a, &b);
+
+        println!("{}", formula.gc_live_count());
+    }
+
+    #[test]
     fn not_01() {
         let mut formula = Formula::new();
 
@@ -657,6 +782,29 @@ mod test {
                 let c_expected = (a as u8).rotate_right(k as u32) as u64;
 
                 assert_eq!(c_actual, c_expected);
+            }
+        }
+
+        assert_eq!(formula.gc_live_count(), 0);
+    }
+
+    #[test]
+    fn cond_01() {
+        let mut formula = Formula::new();
+
+        for a in 0..=15 {
+            for b in 0..=15 {
+                for t in &[0, 1] {
+                    let yes = formula.from_u64(a, 4);
+                    let no = formula.from_u64(b, 4);
+                    let test = formula.from_u64(*t, 1);
+                    let cond = formula.cond(&test, &yes, &no);
+
+                    let res_actual = formula.try_to_u64(&cond).unwrap();
+                    let res_expected = if *t == 1 { a } else { b };
+
+                    assert_eq!(res_actual, res_expected);
+                }
             }
         }
 
