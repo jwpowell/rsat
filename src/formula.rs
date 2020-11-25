@@ -455,6 +455,109 @@ impl Formula {
         self.rotl(a, a.width() - k)
     }
 
+    pub fn fold_and(&mut self, a: &Word) -> Word {
+        let mut inner = self.0.borrow_mut();
+
+        let mut value = inner.val(true);
+
+        for id in &a.ids {
+            let t1 = value;
+            value = inner.and(value, *id);
+            inner.decr(t1);
+        }
+
+        Word {
+            formula: self.shallow_clone(),
+            ids: vec![value],
+        }
+    }
+
+    pub fn fold_or(&mut self, a: &Word) -> Word {
+        let mut inner = self.0.borrow_mut();
+
+        let mut value = inner.val(false);
+
+        for id in &a.ids {
+            let t1 = value;
+            value = inner.or(value, *id);
+            inner.decr(t1);
+        }
+
+        Word {
+            formula: self.shallow_clone(),
+            ids: vec![value],
+        }
+    }
+
+    pub fn fold_xor(&mut self, a: &Word) -> Word {
+        let mut inner = self.0.borrow_mut();
+
+        let mut value = inner.val(false);
+
+        for id in &a.ids {
+            let t1 = value;
+            value = xor_help(&mut inner, value, *id);
+            inner.decr(t1);
+        }
+
+        Word {
+            formula: self.shallow_clone(),
+            ids: vec![value],
+        }
+    }
+
+    // lhs[n] && !rhs[n] or
+    pub fn less_than(&mut self, a: &Word, b: &Word) -> Word {
+        assert_eq!(a.width(), b.width());
+
+        let mut inner = self.0.borrow_mut();
+        let mut value = inner.val(false);
+
+        for i in (0..a.width()).into_iter() {
+            // a' AND b
+            let t2 = inner.not(a.ids[i]);
+            let t3 = inner.and(t2, b.ids[i]);
+
+            // NOT (a AND b')
+            let t4 = inner.not(b.ids[i]);
+            let t5 = inner.and(a.ids[i], t4);
+            let t6 = inner.not(t5);
+
+            // (a' AND b) OR NOT(a AND b') AND value
+            let t7 = inner.and(t6, value);
+            let t8 = value;
+            value = inner.or(t3, t7);
+
+            inner.decr(t2);
+            inner.decr(t3);
+            inner.decr(t4);
+            inner.decr(t5);
+            inner.decr(t6);
+            inner.decr(t7);
+            inner.decr(t8);
+        }
+
+        Word {
+            formula: self.shallow_clone(),
+            ids: vec![value],
+        }
+    }
+
+    pub fn equal_to(&mut self, a: &Word, b: &Word) -> Word {
+        let c = self.xor(a, b);
+        let d = self.fold_or(&c);
+
+        self.not(&d)
+    }
+
+    pub fn greater_than(&mut self, a: &Word, b: &Word) -> Word {
+        let t1 = self.less_than(a, b);
+        let t2 = self.equal_to(a, b);
+        let t3 = self.or(&t1, &t2);
+
+        self.not(&t3)
+    }
+
     fn gc_live_count(&self) -> usize {
         let mut count = 0;
 
@@ -661,6 +764,72 @@ mod test {
 
                 let c_actual = formula.try_to_u64(&z).unwrap();
                 let c_expected = (a * b) & 0x0f;
+
+                assert_eq!(c_actual, c_expected);
+            }
+        }
+
+        assert_eq!(formula.gc_live_count(), 0);
+    }
+
+    #[test]
+    fn less_than_01() {
+        let mut formula = Formula::new();
+
+        for a in 0..=15 {
+            let x = formula.from_u64(a, 4);
+
+            for b in 0..=15 {
+                let y = formula.from_u64(b, 4);
+                let z = formula.less_than(&x, &y);
+
+                let c_actual = formula.try_to_u64(&z).unwrap();
+                println!("{} {}", a, b);
+                let c_expected = if a < b { 1 } else { 0 };
+
+                assert_eq!(c_actual, c_expected);
+            }
+        }
+
+        assert_eq!(formula.gc_live_count(), 0);
+    }
+
+    #[test]
+    fn equal_to_01() {
+        let mut formula = Formula::new();
+
+        for a in 0..=15 {
+            let x = formula.from_u64(a, 4);
+
+            for b in 0..=15 {
+                let y = formula.from_u64(b, 4);
+                let z = formula.equal_to(&x, &y);
+
+                let c_actual = formula.try_to_u64(&z).unwrap();
+                println!("{} {}", a, b);
+                let c_expected = if a == b { 1 } else { 0 };
+
+                assert_eq!(c_actual, c_expected);
+            }
+        }
+
+        assert_eq!(formula.gc_live_count(), 0);
+    }
+
+    #[test]
+    fn greater_than_01() {
+        let mut formula = Formula::new();
+
+        for a in 0..=15 {
+            let x = formula.from_u64(a, 4);
+
+            for b in 0..=15 {
+                let y = formula.from_u64(b, 4);
+                let z = formula.greater_than(&x, &y);
+
+                let c_actual = formula.try_to_u64(&z).unwrap();
+                println!("{} {}", a, b);
+                let c_expected = if a > b { 1 } else { 0 };
 
                 assert_eq!(c_actual, c_expected);
             }
