@@ -1,5 +1,7 @@
 use std::io::BufRead;
+use std::iter::FusedIterator;
 
+/// Iterator to produce clauses from a DIMACS formatted `BufRead` stream.
 pub struct Dimacs<R> {
     io: R,
     line: String,
@@ -9,6 +11,7 @@ impl<R> Dimacs<R>
 where
     R: BufRead,
 {
+    /// Create a new `Dimacs<R>` structure with the given `BufRead` stream.
     pub fn new(io: R) -> Dimacs<R> {
         Dimacs {
             io,
@@ -16,6 +19,8 @@ where
         }
     }
 }
+
+impl<R> FusedIterator for Dimacs<R> where R: BufRead {}
 
 impl<R> Iterator for Dimacs<R>
 where
@@ -25,15 +30,22 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
+            // clear the string
             self.line.clear();
+
+            // read a line into the string
             let bytes = self.io.read_line(&mut self.line).unwrap();
 
+            // EOF condition
             if bytes == 0 {
                 break;
             }
 
+            // remove all whitespace at beginning and end of string
             let line = self.line.trim();
 
+            // split the line into tokens, parse them as i32, drop the trailing 0, and the collect
+            // into a Vec<i32> to return
             if !(line.is_empty() || line.starts_with('c') || line.starts_with('p')) {
                 let clause: Vec<i32> = line
                     .split_whitespace()
