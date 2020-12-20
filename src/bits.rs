@@ -26,6 +26,7 @@ impl Default for Bits {
 }
 
 impl Bits {
+    /// Creates a new container of boolean expressions.
     pub fn new() -> Bits {
         Bits(Rc::new(RefCell::new(_Bits {
             bits: vec![],
@@ -33,43 +34,54 @@ impl Bits {
         })))
     }
 
+    /// Create a boolean variable
     pub fn var(&self) -> u32 {
         self.alloc_bit(Bit::Var)
     }
 
+    /// Create a boolean value
     pub fn val(&self, v: bool) -> u32 {
         self.alloc_bit(Bit::Val(v))
     }
 
+    /// Create a conjunction of two expressions
     pub fn and(&self, a: u32, b: u32) -> u32 {
         self.alloc_bit(Bit::And(a, b))
     }
 
+    /// Create a disjunction of two expressions
     pub fn or(&self, a: u32, b: u32) -> u32 {
         self.alloc_bit(Bit::Or(a, b))
     }
 
+    /// Create the complement of an expression
     pub fn not(&self, a: u32) -> u32 {
         self.alloc_bit(Bit::Not(a))
     }
 
+    /// Gets the `Bit` expression for the given expression
+    pub fn get(&self, id: u32) -> Bit {
+        self.0.borrow().bits[id as usize].1
+    }
+
+    /// Sets the expression.
+    pub fn set(&self, id: u32, bit: Bit) {
+        todo!()
+    }
+
+    /// Returns the reference counter for an expression
+    pub fn refcount(&self, id: u32) -> u32 {
+        self.0.borrow().bits[id as usize].0
+    }
+
+    /// Increment the reference counter for an expression
     pub fn incr(&self, id: u32) {
         let mut inner = self.0.borrow_mut();
         inner.bits[id as usize].0 += 1;
     }
 
-    pub fn get(&self, id: u32) -> Bit {
-        self.0.borrow().bits[id as usize].1
-    }
-
-    pub fn refcount(&self, id: u32) -> u32 {
-        self.0.borrow().bits[id as usize].0
-    }
-
-    pub fn set(&self, id: u32, bit: Bit) {
-        todo!()
-    }
-
+    ///Decrement the reference counter for an expression. If the reference counter reaches zero,
+    ///garbage collect the ID and recursively decrement an other referenced expressions.
     pub fn decr(&self, id: u32) {
         let mut inner = self.0.borrow_mut();
         let mut pending = vec![id];
