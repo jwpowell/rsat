@@ -3,44 +3,192 @@ use std::ops::{
     Neg, Not, Shl, ShlAssign, Shr, ShrAssign, Sub, SubAssign,
 };
 
+use std::convert::{TryFrom, TryInto};
+
 use crate::bits::{Bit, Bits};
 
-use std::convert::TryFrom;
-use std::fmt;
-
-use std::cell::RefCell;
-use std::rc::Rc;
-
 pub struct Word {
-    words: Bits,
-    bits: Vec<u32>,
+    bits: Bits,
+    ids: Vec<u32>,
 }
 
 impl Clone for Word {
     fn clone(&self) -> Word {
-        todo!()
+        let word = Word {
+            bits: self.bits.clone(),
+            ids: self.ids.clone(),
+        };
+
+        for id in &word.ids {
+            self.bits.incr(*id);
+        }
+
+        word
     }
 }
 
 impl Drop for Word {
     fn drop(&mut self) {
-        todo!()
+        for id in &self.ids {
+            self.bits.decr(*id);
+        }
     }
 }
 
 impl Word {
-    pub fn width(&self) -> usize {
-        self.bits.len()
+    pub fn var(bits: &Bits, width: usize) -> Word {
+        let mut ids = Vec::with_capacity(width);
+
+        for _ in 0..width {
+            let id = bits.var();
+            bits.incr(id);
+
+            ids.push(id);
+        }
+
+        Word {
+            ids,
+            bits: bits.clone(),
+        }
     }
 
-    pub fn simplify(&mut self) {
-        todo!()
+    pub fn width(&self) -> usize {
+        self.ids.len()
+    }
+
+    pub fn from_u64(bits: &Bits, width: usize, val: u64) -> Word {
+        let mut ids = Vec::with_capacity(width);
+
+        for i in 0..width {
+            let id = bits.val((val >> i) & 1 != 0);
+            bits.incr(id);
+            ids.push(id);
+        }
+
+        Word {
+            ids,
+            bits: bits.clone(),
+        }
     }
 }
 
-impl fmt::Debug for Word {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        todo!()
+impl BitAnd<&Word> for &Word {
+    type Output = Word;
+
+    fn bitand(self, rhs: &Word) -> Self::Output {
+        assert!(self.bits.ptr_eq(&rhs.bits));
+        assert_eq!(self.width(), rhs.width());
+
+        Word {
+            bits: self.bits.clone(),
+
+            ids: self
+                .ids
+                .iter()
+                .zip(rhs.ids.iter())
+                .map(|(a, b)| {
+                    if self.bits.is_false(*a) || self.bits.is_true(*b) {
+                        self.bits.incr(*a);
+                        return *a;
+                    }
+
+                    if self.bits.is_true(*a) || self.bits.is_false(*b) {
+                        self.bits.incr(*b);
+                        return *b;
+                    }
+
+                    if a == b {
+                        self.bits.incr(*a);
+                        return *a;
+                    }
+
+                    let c = self.bits.and(*a, *b);
+
+                    self.bits.incr(*a);
+                    self.bits.incr(*b);
+                    self.bits.incr(c);
+
+                    c
+                })
+                .collect(),
+        }
+    }
+}
+
+impl BitOr<&Word> for &Word {
+    type Output = Word;
+
+    fn bitor(self, rhs: &Word) -> Self::Output {
+        assert!(self.bits.ptr_eq(&rhs.bits));
+        assert_eq!(self.width(), rhs.width());
+
+        Word {
+            bits: self.bits.clone(),
+
+            ids: self
+                .ids
+                .iter()
+                .zip(rhs.ids.iter())
+                .map(|(a, b)| {
+                    if self.bits.is_false(*a) || self.bits.is_true(*b) {
+                        self.bits.incr(*b);
+                        return *b;
+                    }
+
+                    if self.bits.is_true(*a) || self.bits.is_false(*b) {
+                        self.bits.incr(*a);
+                        return *a;
+                    }
+
+                    if a == b {
+                        self.bits.incr(*a);
+                        return *a;
+                    }
+
+                    let c = self.bits.or(*a, *b);
+
+                    self.bits.incr(*a);
+                    self.bits.incr(*b);
+                    self.bits.incr(c);
+
+                    c
+                })
+                .collect(),
+        }
+    }
+}
+
+impl Not for &Word {
+    type Output = Word;
+
+    fn not(self) -> Word {
+        Word {
+            bits: self.bits.clone(),
+            ids: self
+                .ids
+                .iter()
+                .map(|a| {
+                    if self.bits.is_false(*a) {
+                        let c = self.bits.val(true);
+                        self.bits.incr(c);
+
+                        c
+                    } else if self.bits.is_true(*a) {
+                        let c = self.bits.val(false);
+                        self.bits.incr(c);
+
+                        c
+                    } else {
+                        let c = self.bits.not(*a);
+
+                        self.bits.incr(*a);
+                        self.bits.incr(c);
+
+                        c
+                    }
+                })
+                .collect(),
+        }
     }
 }
 
@@ -49,11 +197,10 @@ impl TryFrom<&Word> for u64 {
 
     fn try_from(value: &Word) -> Result<u64, Self::Error> {
         let mut n = 0;
-
-        for (i, bit) in value.bits.iter().enumerate() {
-            if value.words.is_true(*bit) {
-                n |= (1u64 << i);
-            } else if !value.words.is_false(*bit) {
+        for (i, id) in value.ids.iter().enumerate() {
+            if value.bits.is_true(*id) {
+                n |= 1u64 << i;
+            } else if !value.bits.is_false(*id) {
                 return Err(());
             }
         }
@@ -62,238 +209,67 @@ impl TryFrom<&Word> for u64 {
     }
 }
 
-impl BitAnd for Word {
-    type Output = Self;
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    fn bitand(self, rhs: Self) -> Self::Output {
-        (&self).bitand(&rhs)
+    #[test]
+    fn convert_01() {
+        let bits = Bits::new();
+
+        for k in 0u64..=255 {
+            let a = Word::from_u64(&bits, 8, k);
+            let j = u64::try_from(&a).unwrap();
+
+            assert_eq!(k, j);
+        }
     }
-}
 
-impl BitAnd<&Word> for &Word {
-    type Output = Word;
+    #[test]
+    fn and_01() {
+        let bits = Bits::new();
 
-    fn bitand(self, rhs: &Word) -> Self::Output {
-        todo!()
+        for k in 0u8..=255 {
+            for j in 0u8..=255 {
+                let a = Word::from_u64(&bits, 8, k as u64);
+                let b = Word::from_u64(&bits, 8, j as u64);
+                let c = &a & &b;
+
+                let l = u64::try_from(&c).unwrap() as u8;
+
+                assert_eq!(l, k & j);
+            }
+        }
     }
-}
 
-impl BitAndAssign for Word {
-    fn bitand_assign(&mut self, rhs: Word) {
-        self.bitand_assign(&rhs);
+    #[test]
+    fn or_01() {
+        let bits = Bits::new();
+
+        for k in 0u8..=255 {
+            for j in 0u8..=255 {
+                let a = Word::from_u64(&bits, 8, k as u64);
+                let b = Word::from_u64(&bits, 8, j as u64);
+                let c = &a | &b;
+
+                let l = u64::try_from(&c).unwrap() as u8;
+
+                assert_eq!(l, k | j);
+            }
+        }
     }
-}
 
-impl BitAndAssign<&Word> for Word {
-    fn bitand_assign(&mut self, rhs: &Word) {
-        todo!()
-    }
-}
+    #[test]
+    fn not_01() {
+        let bits = Bits::new();
 
-impl BitOr for Word {
-    type Output = Self;
+        for k in 0u8..=255 {
+            let a = Word::from_u64(&bits, 8, k as u64);
+            let c = !&a;
 
-    fn bitor(self, rhs: Self) -> Self::Output {
-        (&self).bitor(&rhs)
-    }
-}
+            let l = u64::try_from(&c).unwrap() as u8;
 
-impl BitOr<&Word> for &Word {
-    type Output = Word;
-
-    fn bitor(self, rhs: &Word) -> Self::Output {
-        todo!()
-    }
-}
-
-impl BitOrAssign for Word {
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.bitor_assign(&rhs);
-    }
-}
-
-impl BitOrAssign<&Word> for Word {
-    fn bitor_assign(&mut self, rhs: &Word) {
-        todo!()
-    }
-}
-
-impl BitXor for Word {
-    type Output = Self;
-
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        (&self).bitxor(&rhs)
-    }
-}
-
-impl BitXor<&Word> for &Word {
-    type Output = Word;
-
-    fn bitxor(self, rhs: &Word) -> Self::Output {
-        todo!()
-    }
-}
-
-impl BitXorAssign for Word {
-    fn bitxor_assign(&mut self, rhs: Self) {
-        self.bitor_assign(&rhs);
-    }
-}
-
-impl BitXorAssign<&Word> for Word {
-    fn bitxor_assign(&mut self, rhs: &Word) {
-        todo!()
-    }
-}
-
-impl Not for Word {
-    type Output = Word;
-
-    fn not(self) -> Self::Output {
-        (&self).not()
-    }
-}
-
-impl Not for &Word {
-    type Output = Word;
-
-    fn not(self) -> Self::Output {
-        todo!()
-    }
-}
-
-impl Shl<u64> for Word {
-    type Output = Word;
-
-    fn shl(self, k: u64) -> Self::Output {
-        (&self).shl(k)
-    }
-}
-
-impl Shl<u64> for &Word {
-    type Output = Word;
-
-    fn shl(self, k: u64) -> Self::Output {
-        todo!()
-    }
-}
-
-impl ShlAssign<u64> for Word {
-    fn shl_assign(&mut self, k: u64) {
-        todo!()
-    }
-}
-
-impl Shr<u64> for &Word {
-    type Output = Word;
-
-    fn shr(self, k: u64) -> Self::Output {
-        todo!()
-    }
-}
-
-impl ShrAssign<u64> for Word {
-    fn shr_assign(&mut self, k: u64) {
-        todo!()
-    }
-}
-
-impl Add for Word {
-    type Output = Word;
-
-    fn add(self, rhs: Word) -> Self::Output {
-        (&self).add(&rhs)
-    }
-}
-
-impl Add<&Word> for &Word {
-    type Output = Word;
-
-    fn add(self, rhs: &Word) -> Self::Output {
-        todo!()
-    }
-}
-
-impl AddAssign for Word {
-    fn add_assign(&mut self, rhs: Self) {
-        self.add_assign(&rhs);
-    }
-}
-
-impl AddAssign<&Word> for Word {
-    fn add_assign(&mut self, rhs: &Self) {
-        todo!()
-    }
-}
-
-impl Neg for Word {
-    type Output = Word;
-
-    fn neg(self) -> Word {
-        (&self).neg()
-    }
-}
-
-impl Neg for &Word {
-    type Output = Word;
-
-    fn neg(self) -> Word {
-        todo!()
-    }
-}
-
-impl Sub for Word {
-    type Output = Word;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        (&self).sub(&rhs)
-    }
-}
-
-impl Sub<&Word> for &Word {
-    type Output = Word;
-
-    fn sub(self, rhs: &Word) -> Self::Output {
-        todo!()
-    }
-}
-
-impl SubAssign for Word {
-    fn sub_assign(&mut self, rhs: Word) {
-        self.sub_assign(&rhs);
-    }
-}
-
-impl SubAssign<&Word> for Word {
-    fn sub_assign(&mut self, rhs: &Word) {
-        todo!()
-    }
-}
-
-impl Mul for Word {
-    type Output = Word;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        (&self).mul(&rhs)
-    }
-}
-
-impl Mul<&Word> for &Word {
-    type Output = Word;
-
-    fn mul(self, rhs: &Word) -> Self::Output {
-        todo!()
-    }
-}
-
-impl MulAssign for Word {
-    fn mul_assign(&mut self, rhs: Word) {
-        self.mul_assign(&rhs);
-    }
-}
-
-impl MulAssign<&Word> for Word {
-    fn mul_assign(&mut self, rhs: &Word) {
-        todo!()
+            assert_eq!(l, !k);
+        }
     }
 }

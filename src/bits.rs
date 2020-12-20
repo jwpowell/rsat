@@ -122,12 +122,12 @@ impl Bits {
         let mut inner = self.0.borrow_mut();
 
         if let Some(id) = inner.garbage.pop() {
-            inner.bits[id as usize] = (1, bit);
+            inner.bits[id as usize] = (0, bit);
             return id;
         }
 
         let id = inner.bits.len() as u32;
-        inner.bits.push((1, bit));
+        inner.bits.push((0, bit));
 
         id
     }
@@ -143,10 +143,60 @@ impl Bits {
     pub fn is_true(&self, id: u32) -> bool {
         self.is_val(id, true)
     }
+
+    pub fn ptr_eq(&self, other: &Bits) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 impl Clone for Bits {
     fn clone(&self) -> Bits {
         Bits(Rc::clone(&self.0))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn gc_01() {
+        let mut bits = Bits::new();
+
+        let a = bits.var();
+
+        assert_eq!(bits.refcount(a), 0);
+        bits.incr(a);
+        assert_eq!(bits.refcount(a), 1);
+
+        let b = bits.var();
+        bits.incr(b);
+
+        let c = bits.and(a, b);
+        bits.incr(c);
+
+        assert_eq!(bits.refcount(a), 1);
+        assert_eq!(bits.refcount(b), 1);
+        assert_eq!(bits.refcount(c), 1);
+
+        bits.decr(c);
+
+        assert_eq!(bits.refcount(a), 0);
+        assert_eq!(bits.refcount(b), 0);
+        assert_eq!(bits.refcount(c), 0);
+    }
+
+    #[test]
+    fn gc_02() {
+        let mut bits = Bits::new();
+        let mut xs = vec![];
+
+        let a = bits.var();
+
+        xs.push(a);
+
+        for i in 1..xs.len() {
+            xs.push(xs[i - 1])
+        }
     }
 }
