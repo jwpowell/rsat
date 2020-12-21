@@ -287,10 +287,31 @@ impl Add<&Word> for &Word {
 
 impl AddAssign<&Word> for Word {
     fn add_assign(&mut self, rhs: &Word) {
-        assert!(self.bits.ptr_eq(&rhs.bits));
-        assert_eq!(self.width(), rhs.width());
-
         let c = &*self + rhs;
+
+        *self = c;
+    }
+}
+
+impl Neg for &Word {
+    type Output = Word;
+
+    fn neg(self) -> Self::Output {
+        self.not().add(&Word::from_u64(&self.bits, self.width(), 1))
+    }
+}
+
+impl Sub<&Word> for &Word {
+    type Output = Word;
+
+    fn sub(self, rhs: &Word) -> Self::Output {
+        self + &-rhs
+    }
+}
+
+impl SubAssign<&Word> for Word {
+    fn sub_assign(&mut self, rhs: &Word) {
+        let c = &*self - rhs;
 
         *self = c;
     }
@@ -586,6 +607,61 @@ mod test {
                 let l = u64::try_from(&c).unwrap();
                 println!("{} {}", k, j);
                 assert_eq!(l, k.wrapping_add(j) & MAX);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+    fn neg_01() {
+        let bits = Bits::new();
+
+        for k in 0..=MAX {
+            let a = Word::from_u64(&bits, BITS, k);
+            let c = -&a;
+
+            let l = u64::try_from(&c).unwrap();
+
+            assert_eq!(l & MAX, k.wrapping_neg() & MAX);
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+    fn sub_01() {
+        let bits = Bits::new();
+
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
+                let c = &a - &b;
+
+                let l = u64::try_from(&c).unwrap();
+                println!("{} {}", k, j);
+                assert_eq!(l, k.wrapping_sub(j) & MAX);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+    fn sub_02() {
+        let bits = Bits::new();
+
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
+                let mut c = a.clone();
+                c -= &b;
+
+                let l = u64::try_from(&c).unwrap();
+                println!("{} {}", k, j);
+                assert_eq!(l, k.wrapping_sub(j) & MAX);
             }
         }
 
