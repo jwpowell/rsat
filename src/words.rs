@@ -70,6 +70,34 @@ impl Word {
             bits: bits.clone(),
         }
     }
+
+    pub fn slice(&self, lo: usize, hi: usize) -> Word {
+        let word = Word {
+            bits: self.bits.clone(),
+            ids: self.ids[lo..=hi].to_vec(),
+        };
+
+        for id in &word.ids {
+            self.bits.incr(*id);
+        }
+
+        word
+    }
+
+    pub fn concat(&self, rhs: &Word) -> Word {
+        assert!(self.bits.ptr_eq(&rhs.bits));
+
+        let word = Word {
+            ids: rhs.ids.iter().chain(self.ids.iter()).copied().collect(),
+            bits: self.bits.clone(),
+        };
+
+        for id in &word.ids {
+            self.bits.incr(*id);
+        }
+
+        word
+    }
 }
 
 impl BitAnd<&Word> for &Word {
@@ -115,6 +143,13 @@ impl BitAnd<&Word> for &Word {
     }
 }
 
+impl BitAndAssign<&Word> for Word {
+    fn bitand_assign(&mut self, rhs: &Word) {
+        let c = self.bitand(rhs);
+        *self = c;
+    }
+}
+
 impl BitOr<&Word> for &Word {
     type Output = Word;
 
@@ -155,6 +190,13 @@ impl BitOr<&Word> for &Word {
                 })
                 .collect(),
         }
+    }
+}
+
+impl BitOrAssign<&Word> for Word {
+    fn bitor_assign(&mut self, rhs: &Word) {
+        let c = self.bitor(rhs);
+        *self = c;
     }
 }
 
@@ -202,6 +244,13 @@ impl BitXor<&Word> for &Word {
         let t4 = self & &t2;
 
         &t3 | &t4
+    }
+}
+
+impl BitXorAssign<&Word> for Word {
+    fn bitxor_assign(&mut self, rhs: &Word) {
+        let c = self.bitxor(rhs);
+        *self = c;
     }
 }
 
@@ -256,6 +305,24 @@ mod test {
     }
 
     #[test]
+    fn and_02() {
+        let bits = Bits::new();
+
+        for k in 0u8..=255 {
+            for j in 0u8..=255 {
+                let a = Word::from_u64(&bits, 8, k as u64);
+                let b = Word::from_u64(&bits, 8, j as u64);
+                let mut c = a.clone();
+                c &= &b;
+
+                let l = u64::try_from(&c).unwrap() as u8;
+
+                assert_eq!(l, k & j);
+            }
+        }
+    }
+
+    #[test]
     fn or_01() {
         let bits = Bits::new();
 
@@ -273,6 +340,24 @@ mod test {
     }
 
     #[test]
+    fn or_02() {
+        let bits = Bits::new();
+
+        for k in 0u8..=255 {
+            for j in 0u8..=255 {
+                let a = Word::from_u64(&bits, 8, k as u64);
+                let b = Word::from_u64(&bits, 8, j as u64);
+                let mut c = a.clone();
+                c |= &b;
+
+                let l = u64::try_from(&c).unwrap() as u8;
+
+                assert_eq!(l, k | j);
+            }
+        }
+    }
+
+    #[test]
     fn xor_01() {
         let bits = Bits::new();
 
@@ -281,6 +366,24 @@ mod test {
                 let a = Word::from_u64(&bits, 8, k as u64);
                 let b = Word::from_u64(&bits, 8, j as u64);
                 let c = &a ^ &b;
+
+                let l = u64::try_from(&c).unwrap() as u8;
+
+                assert_eq!(l, k ^ j);
+            }
+        }
+    }
+
+    #[test]
+    fn xor_02() {
+        let bits = Bits::new();
+
+        for k in 0u8..=255 {
+            for j in 0u8..=255 {
+                let a = Word::from_u64(&bits, 8, k as u64);
+                let b = Word::from_u64(&bits, 8, j as u64);
+                let mut c = a.clone();
+                c ^= &b;
 
                 let l = u64::try_from(&c).unwrap() as u8;
 
