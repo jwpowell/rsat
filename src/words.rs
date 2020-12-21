@@ -192,6 +192,19 @@ impl Not for &Word {
     }
 }
 
+impl BitXor<&Word> for &Word {
+    type Output = Word;
+    fn bitxor(self, rhs: &Word) -> Self::Output {
+        let t1 = !self;
+        let t2 = !rhs;
+
+        let t3 = &t1 & rhs;
+        let t4 = self & &t2;
+
+        &t3 | &t4
+    }
+}
+
 impl TryFrom<&Word> for u64 {
     type Error = ();
 
@@ -255,6 +268,23 @@ mod test {
                 let l = u64::try_from(&c).unwrap() as u8;
 
                 assert_eq!(l, k | j);
+            }
+        }
+    }
+
+    #[test]
+    fn xor_01() {
+        let bits = Bits::new();
+
+        for k in 0u8..=255 {
+            for j in 0u8..=255 {
+                let a = Word::from_u64(&bits, 8, k as u64);
+                let b = Word::from_u64(&bits, 8, j as u64);
+                let c = &a ^ &b;
+
+                let l = u64::try_from(&c).unwrap() as u8;
+
+                assert_eq!(l, k ^ j);
             }
         }
     }
