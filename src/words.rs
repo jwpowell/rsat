@@ -193,13 +193,19 @@ impl Not for &Word {
 impl BitXor<&Word> for &Word {
     type Output = Word;
     fn bitxor(self, rhs: &Word) -> Self::Output {
-        let t1 = !self;
-        let t2 = !rhs;
+        assert!(self.bits.ptr_eq(&rhs.bits));
+        assert_eq!(self.width(), rhs.width());
 
-        let t3 = &t1 & rhs;
-        let t4 = self & &t2;
+        Word {
+            bits: self.bits.clone(),
 
-        &t3 | &t4
+            ids: self
+                .ids
+                .iter()
+                .zip(rhs.ids.iter())
+                .map(|(a, b)| self.bits.xor(*a, *b))
+                .collect(),
+        }
     }
 }
 
@@ -214,7 +220,7 @@ impl Shr<usize> for &Word {
     type Output = Word;
 
     fn shr(self, rhs: usize) -> Self::Output {
-        let mut word = Word {
+        Word {
             bits: self.bits.clone(),
             ids: self
                 .ids
@@ -228,9 +234,7 @@ impl Shr<usize> for &Word {
                 .chain(std::iter::repeat_with(|| self.bits.val(false)))
                 .take(self.width())
                 .collect(),
-        };
-
-        word
+        }
     }
 }
 
@@ -238,7 +242,7 @@ impl Shl<usize> for &Word {
     type Output = Word;
 
     fn shl(self, rhs: usize) -> Self::Output {
-        let mut word = Word {
+        Word {
             bits: self.bits.clone(),
             ids: std::iter::repeat_with(|| self.bits.val(false))
                 .take(rhs)
@@ -248,9 +252,7 @@ impl Shl<usize> for &Word {
                 }))
                 .take(self.width())
                 .collect(),
-        };
-
-        word
+        }
     }
 }
 
@@ -258,7 +260,39 @@ impl Add<&Word> for &Word {
     type Output = Word;
 
     fn add(self, rhs: &Word) -> Word {
-        todo!()
+        assert!(self.bits.ptr_eq(&rhs.bits));
+        assert_eq!(self.width(), rhs.width());
+
+        let mut carry = self.bits.val(false);
+
+        let mut ids = Vec::with_capacity(self.width());
+
+        for (x, y) in self.ids.iter().zip(rhs.ids.iter()) {
+            let (s, c) = self.bits.full_adder(*x, *y, carry);
+
+            ids.push(s);
+
+            self.bits.decr(carry);
+            carry = c;
+        }
+
+        self.bits.decr(carry);
+
+        Word {
+            bits: self.bits.clone(),
+            ids,
+        }
+    }
+}
+
+impl AddAssign<&Word> for Word {
+    fn add_assign(&mut self, rhs: &Word) {
+        assert!(self.bits.ptr_eq(&rhs.bits));
+        assert_eq!(self.width(), rhs.width());
+
+        let c = &*self + rhs;
+
+        *self = c;
     }
 }
 
@@ -307,7 +341,7 @@ mod test {
             assert_eq!(k, j);
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -326,7 +360,7 @@ mod test {
             }
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -346,7 +380,7 @@ mod test {
             }
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -365,7 +399,7 @@ mod test {
             }
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -385,7 +419,7 @@ mod test {
             }
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -404,7 +438,7 @@ mod test {
             }
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -424,7 +458,7 @@ mod test {
             }
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -440,7 +474,7 @@ mod test {
             assert_eq!(l & MAX, !k & MAX);
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -459,7 +493,7 @@ mod test {
             }
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -478,7 +512,7 @@ mod test {
             }
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -497,7 +531,7 @@ mod test {
             }
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 
     #[test]
@@ -516,6 +550,45 @@ mod test {
             }
         }
 
-        assert_eq!(total_refcounts(&bits), 0);
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+    fn add_01() {
+        let bits = Bits::new();
+
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
+                let c = &a + &b;
+
+                let l = u64::try_from(&c).unwrap();
+                println!("{} {}", k, j);
+                assert_eq!(l, k.wrapping_add(j) & MAX);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+    fn add_02() {
+        let bits = Bits::new();
+
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
+                let mut c = a.clone();
+                c += &b;
+
+                let l = u64::try_from(&c).unwrap();
+                println!("{} {}", k, j);
+                assert_eq!(l, k.wrapping_add(j) & MAX);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
     }
 }

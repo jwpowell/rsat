@@ -112,6 +112,37 @@ impl Bits {
         c
     }
 
+    pub fn xor(&self, a: u32, b: u32) -> u32 {
+        let t1 = self.not(a);
+        let t2 = self.not(b);
+
+        let t3 = self.and(t1, b);
+        let t4 = self.and(a, t2);
+
+        let c = self.or(t3, t4);
+
+        self.decr(t1);
+        self.decr(t2);
+        self.decr(t3);
+        self.decr(t4);
+
+        c
+    }
+
+    pub fn full_adder(&self, a: u32, b: u32, c_in: u32) -> (u32, u32) {
+        let t1 = self.xor(a, b);
+        let s = self.xor(t1, c_in);
+        let t2 = self.and(c_in, t1);
+        let t3 = self.and(a, b);
+        let c = self.or(t2, t3);
+
+        self.decr(t3);
+        self.decr(t2);
+        self.decr(t1);
+
+        (s, c)
+    }
+
     /// Gets the `Bit` expression for the given expression
     pub fn get(&self, id: u32) -> Bit {
         self.0.borrow().bits[id as usize].1
