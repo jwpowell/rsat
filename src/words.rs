@@ -1,6 +1,6 @@
 use std::ops::{
-    Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Mul, MulAssign,
-    Neg, Not, Shl, ShlAssign, Shr, ShrAssign, Sub, SubAssign,
+    Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Deref, Mul,
+    MulAssign, Neg, Not, Shl, ShlAssign, Shr, ShrAssign, Sub, SubAssign,
 };
 
 use std::convert::{TryFrom, TryInto};
@@ -122,6 +122,27 @@ impl Word {
         let k = k % self.width();
 
         self.rotr(self.width() - k)
+    }
+
+    pub fn cond(test: &Word, yes: &Word, no: &Word) -> Word {
+        assert!(test.bits.ptr_eq(&yes.bits));
+        assert!(test.bits.ptr_eq(&no.bits));
+        assert_eq!(test.width(), 1);
+        assert_eq!(yes.width(), no.width());
+
+        let bits = &test.bits;
+
+        let t = test.ids[0];
+
+        Word {
+            bits: bits.clone(),
+            ids: yes
+                .ids
+                .iter()
+                .zip(no.ids.iter())
+                .map(|(y, n)| bits.cond(t, *y, *n))
+                .collect(),
+        }
     }
 }
 
@@ -314,6 +335,24 @@ impl SubAssign<&Word> for Word {
         let c = &*self - rhs;
 
         *self = c;
+    }
+}
+
+impl Mul<&Word> for &Word {
+    type Output = Word;
+
+    fn mul(self, rhs: &Word) -> Self::Output {
+        assert!(self.bits.ptr_eq(&rhs.bits));
+        assert_eq!(self.width(), rhs.width());
+
+        let zero = Word::from_u64(&self.bits, self.width(), 0);
+        let mut product = zero.clone();
+
+        for k in 0..self.width() {
+            product += &(&Word::cond(&rhs.slice(k, k), self, &zero) << k);
+        }
+
+        product
     }
 }
 
@@ -662,6 +701,25 @@ mod test {
                 let l = u64::try_from(&c).unwrap();
                 println!("{} {}", k, j);
                 assert_eq!(l, k.wrapping_sub(j) & MAX);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+    fn mul_01() {
+        let bits = Bits::new();
+
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
+                let c = &a * &b;
+
+                let l = u64::try_from(&c).unwrap();
+                println!("{} {}", k, j);
+                assert_eq!(l, k.wrapping_mul(j) & MAX);
             }
         }
 

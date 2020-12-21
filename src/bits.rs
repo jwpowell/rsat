@@ -143,6 +143,19 @@ impl Bits {
         (s, c)
     }
 
+    pub fn cond(&self, test: u32, yes: u32, no: u32) -> u32 {
+        let t1 = self.and(test, yes);
+        let t2 = self.not(test);
+        let t3 = self.and(t2, no);
+        let c = self.or(t1, t3);
+
+        self.decr(t1);
+        self.decr(t2);
+        self.decr(t3);
+
+        c
+    }
+
     /// Gets the `Bit` expression for the given expression
     pub fn get(&self, id: u32) -> Bit {
         self.0.borrow().bits[id as usize].1
