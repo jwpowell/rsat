@@ -408,6 +408,13 @@ impl Mul<&Word> for &Word {
     }
 }
 
+impl MulAssign<&Word> for Word {
+    fn mul_assign(&mut self, rhs: &Word) {
+        let c = &*self * rhs;
+        *self = c;
+    }
+}
+
 impl TryFrom<&Word> for u64 {
     type Error = ();
 
@@ -764,6 +771,26 @@ mod test {
                 let a = Word::from_u64(&bits, BITS, k);
                 let b = Word::from_u64(&bits, BITS, j);
                 let c = &a * &b;
+
+                let l = u64::try_from(&c).unwrap();
+
+                assert_eq!(l, k.wrapping_mul(j) & MAX);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+    fn mul_02() {
+        let bits = Bits::new();
+
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
+                let mut c = a.clone();
+                c *= &b;
 
                 let l = u64::try_from(&c).unwrap();
 
