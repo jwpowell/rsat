@@ -148,7 +148,7 @@ impl Bits {
         Rc::ptr_eq(&self.0, &other.0)
     }
 
-    pub fn len(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.0.borrow().bits.len()
     }
 }

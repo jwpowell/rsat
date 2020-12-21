@@ -98,6 +98,34 @@ impl Word {
 
         word
     }
+
+    pub fn rotr(&self, k: usize) -> Word {
+        let k = k % self.width();
+
+        let word = Word {
+            bits: self.bits.clone(),
+            ids: self
+                .ids
+                .iter()
+                .cycle()
+                .skip(k)
+                .take(self.width())
+                .copied()
+                .collect(),
+        };
+
+        for id in &word.ids {
+            self.bits.incr(*id);
+        }
+
+        word
+    }
+
+    pub fn rotl(&self, k: usize) -> Word {
+        let k = k % self.width();
+
+        self.rotr(self.width() - k)
+    }
 }
 
 impl BitAnd<&Word> for &Word {
@@ -326,7 +354,7 @@ mod test {
     fn total_refcounts(bits: &Bits) -> u32 {
         let mut sum = 0;
 
-        for id in 0..bits.len() {
+        for id in 0..bits.size() {
             sum += bits.refcount(id as u32);
         }
 
@@ -512,6 +540,44 @@ mod test {
 
                 println!("{} {}", k, n);
                 assert_eq!(l, k << n);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0);
+    }
+
+    #[test]
+    fn rotr_01() {
+        let bits = Bits::new();
+
+        for k in 0u8..=255 {
+            for n in 0..8 {
+                let a = Word::from_u64(&bits, 8, k as u64);
+                let c = a.rotr(n);
+
+                let l = u64::try_from(&c).unwrap() as u8;
+
+                println!("{} {}", k, n);
+                assert_eq!(l, k.rotate_right(n as u32));
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0);
+    }
+
+    #[test]
+    fn rotl_01() {
+        let bits = Bits::new();
+
+        for k in 0u8..=255 {
+            for n in 0..8 {
+                let a = Word::from_u64(&bits, 8, k as u64);
+                let c = a.rotl(n);
+
+                let l = u64::try_from(&c).unwrap() as u8;
+
+                println!("{} {}", k, n);
+                assert_eq!(l, k.rotate_left(n as u32));
             }
         }
 
