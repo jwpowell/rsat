@@ -57,9 +57,11 @@ impl Word {
     pub fn from_u64(bits: &Bits, width: usize, val: u64) -> Word {
         let mut ids = Vec::with_capacity(width);
 
-        for i in 0..width {
-            let id = bits.val((val >> i) & 1 != 0);
+        let mut val = val;
 
+        for i in 0..width {
+            let id = bits.val((val & 1) != 0);
+            val /= 2;
             ids.push(id);
         }
 
@@ -72,7 +74,7 @@ impl Word {
     pub fn slice(&self, lo: usize, hi: usize) -> Word {
         let word = Word {
             bits: self.bits.clone(),
-            ids: self.ids[lo..=hi].to_vec(),
+            ids: self.ids[lo..hi].to_vec(),
         };
 
         for id in &word.ids {
@@ -167,7 +169,7 @@ impl Word {
     }
 
     pub fn all(&self) -> Word {
-        let init = self.bits.val(false);
+        let init = self.bits.val(true);
         let word = self.fold(init, |bits, a, b| bits.and(a, b));
 
         self.bits.decr(init);
@@ -176,7 +178,7 @@ impl Word {
     }
 
     pub fn any(&self) -> Word {
-        let init = self.bits.val(true);
+        let init = self.bits.val(false);
         let word = self.fold(init, |bits, a, b| bits.or(a, b));
 
         self.bits.decr(init);
@@ -194,8 +196,29 @@ impl Word {
     }
 
     pub fn less_than(&self, rhs: &Word) -> Word {
-        todo!()
-        //self.ids.iter().rev().zip(rhs.ids.iter().rev()).
+        let self_msb = self.slice(self.width() - 1, self.width());
+        let rhs_msb = rhs.slice(rhs.width() - 1, rhs.width());
+
+        let lt_msb = &(!&self_msb) & &rhs_msb;
+        let eq_msb = !&(&self_msb ^ &rhs_msb);
+
+        if self.width() == 1 {
+            lt_msb
+        } else {
+            let self_rest = self.slice(0, self.width() - 1);
+            let rhs_rest = rhs.slice(0, rhs.width() - 1);
+            let lt_rest = self_rest.less_than(&rhs_rest);
+
+            &lt_msb | &(&eq_msb & &lt_rest)
+        }
+    }
+
+    pub fn equal_to(&self, rhs: &Word) -> Word {
+        (self ^ rhs).not().all()
+    }
+
+    pub fn greater_than(&self, rhs: &Word) -> Word {
+        &self.less_than(rhs).not() & &self.equal_to(rhs).not()
     }
 }
 
@@ -402,7 +425,7 @@ impl Mul<&Word> for &Word {
         let mut product = zero.clone();
 
         for k in 0..self.width() {
-            product += &(&Word::cond(&rhs.slice(k, k), self, &zero) << k);
+            product += &(&Word::cond(&rhs.slice(k, k + 1), self, &zero) << k);
         }
 
         product
@@ -1100,6 +1123,63 @@ mod test {
                 let l = u64::try_from(&c).unwrap();
 
                 assert_eq!(l, k.wrapping_mul(j) & MAX);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+    fn less_than_01() {
+        let bits = Bits::new();
+
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
+                let c = a.less_than(&b);
+
+                let l = u64::try_from(&c).unwrap() != 0;
+
+                assert_eq!(l, k < j, "{} < {}", k, j);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+    fn equal_to_01() {
+        let bits = Bits::new();
+
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
+                let c = a.equal_to(&b);
+
+                let l = u64::try_from(&c).unwrap() != 0;
+
+                assert_eq!(l, k == j, "{} == {}", k, j);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+    fn greater_than_01() {
+        let bits = Bits::new();
+
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
+                let c = a.greater_than(&b);
+
+                let l = u64::try_from(&c).unwrap() != 0;
+
+                assert_eq!(l, k > j, "{} > {}", k, j);
             }
         }
 
