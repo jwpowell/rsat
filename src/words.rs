@@ -254,6 +254,51 @@ impl BitXorAssign<&Word> for Word {
     }
 }
 
+impl Shr<usize> for &Word {
+    type Output = Word;
+
+    fn shr(self, rhs: usize) -> Self::Output {
+        let mut word = Word {
+            bits: self.bits.clone(),
+            ids: self
+                .ids
+                .iter()
+                .skip(rhs)
+                .copied()
+                .chain(std::iter::repeat_with(|| self.bits.val(false)))
+                .take(self.width())
+                .collect(),
+        };
+
+        for id in &word.ids {
+            self.bits.incr(*id);
+        }
+
+        word
+    }
+}
+
+impl Shl<usize> for &Word {
+    type Output = Word;
+
+    fn shl(self, rhs: usize) -> Self::Output {
+        let mut word = Word {
+            bits: self.bits.clone(),
+            ids: std::iter::repeat_with(|| self.bits.val(false))
+                .take(rhs)
+                .chain(self.ids.iter().copied())
+                .take(self.width())
+                .collect(),
+        };
+
+        for id in &word.ids {
+            self.bits.incr(*id);
+        }
+
+        word
+    }
+}
+
 impl TryFrom<&Word> for u64 {
     type Error = ();
 
@@ -275,134 +320,201 @@ impl TryFrom<&Word> for u64 {
 mod test {
     use super::*;
 
+    const MAX: u64 = 15;
+    const BITS: usize = 4;
+
+    fn total_refcounts(bits: &Bits) -> u32 {
+        let mut sum = 0;
+
+        for id in 0..bits.len() {
+            sum += bits.refcount(id as u32);
+        }
+
+        sum
+    }
+
     #[test]
     fn convert_01() {
         let bits = Bits::new();
 
-        for k in 0u64..=255 {
-            let a = Word::from_u64(&bits, 8, k);
+        for k in 0..=MAX {
+            let a = Word::from_u64(&bits, BITS, k);
             let j = u64::try_from(&a).unwrap();
 
             assert_eq!(k, j);
         }
+
+        assert_eq!(total_refcounts(&bits), 0);
     }
 
     #[test]
     fn and_01() {
         let bits = Bits::new();
 
-        for k in 0u8..=255 {
-            for j in 0u8..=255 {
-                let a = Word::from_u64(&bits, 8, k as u64);
-                let b = Word::from_u64(&bits, 8, j as u64);
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
                 let c = &a & &b;
 
-                let l = u64::try_from(&c).unwrap() as u8;
+                let l = u64::try_from(&c).unwrap();
 
                 assert_eq!(l, k & j);
             }
         }
+
+        assert_eq!(total_refcounts(&bits), 0);
     }
 
     #[test]
     fn and_02() {
         let bits = Bits::new();
 
-        for k in 0u8..=255 {
-            for j in 0u8..=255 {
-                let a = Word::from_u64(&bits, 8, k as u64);
-                let b = Word::from_u64(&bits, 8, j as u64);
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
                 let mut c = a.clone();
                 c &= &b;
 
-                let l = u64::try_from(&c).unwrap() as u8;
+                let l = u64::try_from(&c).unwrap();
 
                 assert_eq!(l, k & j);
             }
         }
+
+        assert_eq!(total_refcounts(&bits), 0);
     }
 
     #[test]
     fn or_01() {
         let bits = Bits::new();
 
-        for k in 0u8..=255 {
-            for j in 0u8..=255 {
-                let a = Word::from_u64(&bits, 8, k as u64);
-                let b = Word::from_u64(&bits, 8, j as u64);
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
                 let c = &a | &b;
 
-                let l = u64::try_from(&c).unwrap() as u8;
+                let l = u64::try_from(&c).unwrap();
 
                 assert_eq!(l, k | j);
             }
         }
+
+        assert_eq!(total_refcounts(&bits), 0);
     }
 
     #[test]
     fn or_02() {
         let bits = Bits::new();
 
-        for k in 0u8..=255 {
-            for j in 0u8..=255 {
-                let a = Word::from_u64(&bits, 8, k as u64);
-                let b = Word::from_u64(&bits, 8, j as u64);
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
                 let mut c = a.clone();
                 c |= &b;
 
-                let l = u64::try_from(&c).unwrap() as u8;
+                let l = u64::try_from(&c).unwrap();
 
                 assert_eq!(l, k | j);
             }
         }
+
+        assert_eq!(total_refcounts(&bits), 0);
     }
 
     #[test]
     fn xor_01() {
         let bits = Bits::new();
 
-        for k in 0u8..=255 {
-            for j in 0u8..=255 {
-                let a = Word::from_u64(&bits, 8, k as u64);
-                let b = Word::from_u64(&bits, 8, j as u64);
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
                 let c = &a ^ &b;
 
-                let l = u64::try_from(&c).unwrap() as u8;
+                let l = u64::try_from(&c).unwrap();
 
                 assert_eq!(l, k ^ j);
             }
         }
+
+        assert_eq!(total_refcounts(&bits), 0);
     }
 
     #[test]
     fn xor_02() {
         let bits = Bits::new();
 
-        for k in 0u8..=255 {
-            for j in 0u8..=255 {
-                let a = Word::from_u64(&bits, 8, k as u64);
-                let b = Word::from_u64(&bits, 8, j as u64);
+        for k in 0..=MAX {
+            for j in 0..=MAX {
+                let a = Word::from_u64(&bits, BITS, k);
+                let b = Word::from_u64(&bits, BITS, j);
                 let mut c = a.clone();
                 c ^= &b;
 
-                let l = u64::try_from(&c).unwrap() as u8;
+                let l = u64::try_from(&c).unwrap();
 
                 assert_eq!(l, k ^ j);
             }
         }
+
+        assert_eq!(total_refcounts(&bits), 0);
     }
 
     #[test]
     fn not_01() {
         let bits = Bits::new();
 
-        for k in 0u8..=255 {
-            let a = Word::from_u64(&bits, 8, k as u64);
+        for k in 0..=MAX {
+            let a = Word::from_u64(&bits, BITS, k);
             let c = !&a;
 
-            let l = u64::try_from(&c).unwrap() as u8;
+            let l = u64::try_from(&c).unwrap();
 
-            assert_eq!(l, !k);
+            assert_eq!(l & MAX, !k & MAX);
         }
+
+        assert_eq!(total_refcounts(&bits), 0);
+    }
+
+    #[test]
+    fn shr_01() {
+        let bits = Bits::new();
+
+        for k in 0u8..=255 {
+            for n in 0..8 {
+                let a = Word::from_u64(&bits, 8, k as u64);
+                let c = &a >> n;
+
+                let l = u64::try_from(&c).unwrap() as u8;
+
+                println!("{} {}", k, n);
+                assert_eq!(l, k >> n);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0);
+    }
+
+    #[test]
+    fn shl_01() {
+        let bits = Bits::new();
+
+        for k in 0u8..=255 {
+            for n in 0..8 {
+                let a = Word::from_u64(&bits, 8, k as u64);
+                let c = &a << n;
+
+                let l = u64::try_from(&c).unwrap() as u8;
+
+                println!("{} {}", k, n);
+                assert_eq!(l, k << n);
+            }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0);
     }
 }

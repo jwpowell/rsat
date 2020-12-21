@@ -147,6 +147,10 @@ impl Bits {
     pub fn ptr_eq(&self, other: &Bits) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }
+
+    pub fn len(&self) -> usize {
+        self.0.borrow().bits.len()
+    }
 }
 
 impl Clone for Bits {
