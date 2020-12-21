@@ -249,6 +249,15 @@ impl Bits {
         self.0.borrow().bits.len()
     }
 
+    pub fn gc_inf(&self) -> (usize, usize, usize, usize) {
+        let bits_cap = self.0.borrow().bits.capacity();
+        let bits_len = self.0.borrow().bits.len();
+        let gc_cap = self.0.borrow().garbage.capacity();
+        let gc_len = self.0.borrow().garbage.len();
+
+        (bits_len, bits_cap, gc_len, gc_cap)
+    }
+
     pub fn depth(&self, id: u32) -> u32 {
         let bit = self.get(id);
 
