@@ -40,10 +40,7 @@ impl Word {
         let mut ids = Vec::with_capacity(width);
 
         for _ in 0..width {
-            let id = bits.var();
-            bits.incr(id);
-
-            ids.push(id);
+            ids.push(bits.var());
         }
 
         Word {
@@ -61,7 +58,7 @@ impl Word {
 
         for i in 0..width {
             let id = bits.val((val >> i) & 1 != 0);
-            bits.incr(id);
+
             ids.push(id);
         }
 
@@ -142,30 +139,7 @@ impl BitAnd<&Word> for &Word {
                 .ids
                 .iter()
                 .zip(rhs.ids.iter())
-                .map(|(a, b)| {
-                    if self.bits.is_false(*a) || self.bits.is_true(*b) {
-                        self.bits.incr(*a);
-                        return *a;
-                    }
-
-                    if self.bits.is_true(*a) || self.bits.is_false(*b) {
-                        self.bits.incr(*b);
-                        return *b;
-                    }
-
-                    if a == b {
-                        self.bits.incr(*a);
-                        return *a;
-                    }
-
-                    let c = self.bits.and(*a, *b);
-
-                    self.bits.incr(*a);
-                    self.bits.incr(*b);
-                    self.bits.incr(c);
-
-                    c
-                })
+                .map(|(a, b)| self.bits.and(*a, *b))
                 .collect(),
         }
     }
@@ -192,30 +166,7 @@ impl BitOr<&Word> for &Word {
                 .ids
                 .iter()
                 .zip(rhs.ids.iter())
-                .map(|(a, b)| {
-                    if self.bits.is_false(*a) || self.bits.is_true(*b) {
-                        self.bits.incr(*b);
-                        return *b;
-                    }
-
-                    if self.bits.is_true(*a) || self.bits.is_false(*b) {
-                        self.bits.incr(*a);
-                        return *a;
-                    }
-
-                    if a == b {
-                        self.bits.incr(*a);
-                        return *a;
-                    }
-
-                    let c = self.bits.or(*a, *b);
-
-                    self.bits.incr(*a);
-                    self.bits.incr(*b);
-                    self.bits.incr(c);
-
-                    c
-                })
+                .map(|(a, b)| self.bits.or(*a, *b))
                 .collect(),
         }
     }
@@ -234,30 +185,7 @@ impl Not for &Word {
     fn not(self) -> Word {
         Word {
             bits: self.bits.clone(),
-            ids: self
-                .ids
-                .iter()
-                .map(|a| {
-                    if self.bits.is_false(*a) {
-                        let c = self.bits.val(true);
-                        self.bits.incr(c);
-
-                        c
-                    } else if self.bits.is_true(*a) {
-                        let c = self.bits.val(false);
-                        self.bits.incr(c);
-
-                        c
-                    } else {
-                        let c = self.bits.not(*a);
-
-                        self.bits.incr(*a);
-                        self.bits.incr(c);
-
-                        c
-                    }
-                })
-                .collect(),
+            ids: self.ids.iter().map(|a| self.bits.not(*a)).collect(),
         }
     }
 }
@@ -293,14 +221,14 @@ impl Shr<usize> for &Word {
                 .iter()
                 .skip(rhs)
                 .copied()
+                .map(|a| {
+                    self.bits.incr(a);
+                    a
+                })
                 .chain(std::iter::repeat_with(|| self.bits.val(false)))
                 .take(self.width())
                 .collect(),
         };
-
-        for id in &word.ids {
-            self.bits.incr(*id);
-        }
 
         word
     }
@@ -314,16 +242,23 @@ impl Shl<usize> for &Word {
             bits: self.bits.clone(),
             ids: std::iter::repeat_with(|| self.bits.val(false))
                 .take(rhs)
-                .chain(self.ids.iter().copied())
+                .chain(self.ids.iter().copied().map(|a| {
+                    self.bits.incr(a);
+                    a
+                }))
                 .take(self.width())
                 .collect(),
         };
 
-        for id in &word.ids {
-            self.bits.incr(*id);
-        }
-
         word
+    }
+}
+
+impl Add<&Word> for &Word {
+    type Output = Word;
+
+    fn add(self, rhs: &Word) -> Word {
+        todo!()
     }
 }
 

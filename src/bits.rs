@@ -36,27 +36,80 @@ impl Bits {
 
     /// Create a boolean variable
     pub fn var(&self) -> u32 {
-        self.alloc_bit(Bit::Var)
+        let c = self.alloc_bit(Bit::Var);
+
+        self.incr(c);
+
+        c
     }
 
     /// Create a boolean value
     pub fn val(&self, v: bool) -> u32 {
-        self.alloc_bit(Bit::Val(v))
+        let c = self.alloc_bit(Bit::Val(v));
+
+        self.incr(c);
+
+        c
     }
 
     /// Create a conjunction of two expressions
     pub fn and(&self, a: u32, b: u32) -> u32 {
-        self.alloc_bit(Bit::And(a, b))
+        if self.is_false(a) || self.is_true(b) {
+            self.incr(a);
+            return a;
+        }
+
+        if self.is_true(a) || self.is_false(b) {
+            self.incr(b);
+            return b;
+        }
+
+        let c = self.alloc_bit(Bit::And(a, b));
+
+        self.incr(a);
+        self.incr(b);
+        self.incr(c);
+
+        c
     }
 
     /// Create a disjunction of two expressions
     pub fn or(&self, a: u32, b: u32) -> u32 {
-        self.alloc_bit(Bit::Or(a, b))
+        if self.is_false(a) || self.is_true(b) {
+            self.incr(b);
+            return b;
+        }
+
+        if self.is_true(a) || self.is_false(b) {
+            self.incr(a);
+            return a;
+        }
+
+        let c = self.alloc_bit(Bit::Or(a, b));
+
+        self.incr(a);
+        self.incr(b);
+        self.incr(c);
+
+        c
     }
 
     /// Create the complement of an expression
     pub fn not(&self, a: u32) -> u32 {
-        self.alloc_bit(Bit::Not(a))
+        if self.is_false(a) {
+            return self.val(true);
+        }
+
+        if self.is_true(a) {
+            return self.val(false);
+        }
+
+        let c = self.alloc_bit(Bit::Not(a));
+
+        self.incr(a);
+        self.incr(c);
+
+        c
     }
 
     /// Gets the `Bit` expression for the given expression
@@ -168,25 +221,20 @@ mod test {
         let mut bits = Bits::new();
 
         let a = bits.var();
-
-        assert_eq!(bits.refcount(a), 0);
-        bits.incr(a);
         assert_eq!(bits.refcount(a), 1);
 
         let b = bits.var();
-        bits.incr(b);
 
         let c = bits.and(a, b);
-        bits.incr(c);
 
-        assert_eq!(bits.refcount(a), 1);
-        assert_eq!(bits.refcount(b), 1);
+        assert_eq!(bits.refcount(a), 2);
+        assert_eq!(bits.refcount(b), 2);
         assert_eq!(bits.refcount(c), 1);
 
         bits.decr(c);
 
-        assert_eq!(bits.refcount(a), 0);
-        assert_eq!(bits.refcount(b), 0);
+        assert_eq!(bits.refcount(a), 1);
+        assert_eq!(bits.refcount(b), 1);
         assert_eq!(bits.refcount(c), 0);
     }
 
