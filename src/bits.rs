@@ -248,6 +248,19 @@ impl Bits {
     pub fn size(&self) -> usize {
         self.0.borrow().bits.len()
     }
+
+    pub fn depth(&self, id: u32) -> u32 {
+        let bit = self.get(id);
+
+        match bit {
+            Bit::Unused => 0,
+            Bit::Var => 1,
+            Bit::Val(_) => 1,
+            Bit::And(l, r) => 1 + std::cmp::max(self.depth(l), self.depth(r)),
+            Bit::Or(l, r) => 1 + std::cmp::max(self.depth(l), self.depth(r)),
+            Bit::Not(e) => 1 + self.depth(e),
+        }
+    }
 }
 
 impl Clone for Bits {

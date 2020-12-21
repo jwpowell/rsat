@@ -144,6 +144,58 @@ impl Word {
                 .collect(),
         }
     }
+
+    fn fold<F>(&self, init: u32, mut f: F) -> Word
+    where
+        F: FnMut(&Bits, u32, u32) -> u32,
+    {
+        let mut value = init;
+
+        self.bits.incr(value);
+
+        for id in &self.ids {
+            let old = value;
+            value = f(&self.bits, value, *id);
+            self.bits.decr(old);
+        }
+
+        Word {
+            bits: self.bits.clone(),
+            ids: vec![value],
+        }
+    }
+
+    pub fn all(&self) -> Word {
+        let init = self.bits.val(false);
+        let word = self.fold(init, |bits, a, b| bits.and(a, b));
+
+        self.bits.decr(init);
+
+        word
+    }
+
+    pub fn any(&self) -> Word {
+        let init = self.bits.val(true);
+        let word = self.fold(init, |bits, a, b| bits.or(a, b));
+
+        self.bits.decr(init);
+
+        word
+    }
+
+    pub fn parity(&self) -> Word {
+        let init = self.bits.val(false);
+        let word = self.fold(init, |bits, a, b| bits.xor(a, b));
+
+        self.bits.decr(init);
+
+        word
+    }
+
+    pub fn less_than(&self, rhs: &Word) -> Word {
+        todo!()
+        //self.ids.iter().rev().zip(rhs.ids.iter().rev()).
+    }
 }
 
 impl BitAnd<&Word> for &Word {
@@ -548,7 +600,6 @@ mod test {
 
                 let l = u64::try_from(&c).unwrap() as u8;
 
-                println!("{} {}", k, n);
                 assert_eq!(l, k >> n);
             }
         }
@@ -567,7 +618,6 @@ mod test {
 
                 let l = u64::try_from(&c).unwrap() as u8;
 
-                println!("{} {}", k, n);
                 assert_eq!(l, k << n);
             }
         }
@@ -586,7 +636,6 @@ mod test {
 
                 let l = u64::try_from(&c).unwrap() as u8;
 
-                println!("{} {}", k, n);
                 assert_eq!(l, k.rotate_right(n as u32));
             }
         }
@@ -605,7 +654,6 @@ mod test {
 
                 let l = u64::try_from(&c).unwrap() as u8;
 
-                println!("{} {}", k, n);
                 assert_eq!(l, k.rotate_left(n as u32));
             }
         }
@@ -624,7 +672,7 @@ mod test {
                 let c = &a + &b;
 
                 let l = u64::try_from(&c).unwrap();
-                println!("{} {}", k, j);
+
                 assert_eq!(l, k.wrapping_add(j) & MAX);
             }
         }
@@ -644,7 +692,7 @@ mod test {
                 c += &b;
 
                 let l = u64::try_from(&c).unwrap();
-                println!("{} {}", k, j);
+
                 assert_eq!(l, k.wrapping_add(j) & MAX);
             }
         }
@@ -679,7 +727,7 @@ mod test {
                 let c = &a - &b;
 
                 let l = u64::try_from(&c).unwrap();
-                println!("{} {}", k, j);
+
                 assert_eq!(l, k.wrapping_sub(j) & MAX);
             }
         }
@@ -699,7 +747,7 @@ mod test {
                 c -= &b;
 
                 let l = u64::try_from(&c).unwrap();
-                println!("{} {}", k, j);
+
                 assert_eq!(l, k.wrapping_sub(j) & MAX);
             }
         }
@@ -718,9 +766,23 @@ mod test {
                 let c = &a * &b;
 
                 let l = u64::try_from(&c).unwrap();
-                println!("{} {}", k, j);
+
                 assert_eq!(l, k.wrapping_mul(j) & MAX);
             }
+        }
+
+        assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
+    }
+
+    #[test]
+
+    fn var_mul_01() {
+        let mut bits = Bits::new();
+
+        {
+            let a = Word::var(&bits, 64);
+            let b = Word::var(&bits, 64);
+            let c = &a * &b;
         }
 
         assert_eq!(total_refcounts(&bits), 0, "refcount expected to be zero");
