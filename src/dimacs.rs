@@ -1,89 +1,68 @@
 use std::io::BufRead;
-use std::iter::FusedIterator;
 
-/// Iterator to produce clauses from a DIMACS formatted `BufRead` stream.
 pub struct Dimacs<R> {
     io: R,
+
     line: String,
+
+    var_count: usize,
+    clause_count: usize,
 }
 
 impl<R> Dimacs<R>
 where
     R: BufRead,
 {
-    /// Create a new `Dimacs<R>` structure with the given `BufRead` stream.
     pub fn new(io: R) -> Dimacs<R> {
-        Dimacs {
+        let mut dimacs = Dimacs {
             io,
             line: String::new(),
-        }
-    }
-}
+            var_count: 0,
+            clause_count: 0,
+        };
 
-impl<R> FusedIterator for Dimacs<R> where R: BufRead {}
-
-impl<R> Iterator for Dimacs<R>
-where
-    R: BufRead,
-{
-    type Item = Vec<i32>;
-
-    fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // clear the string
-            self.line.clear();
+            dimacs.line.clear();
+            dimacs.io.read_line(&mut dimacs.line);
+            if dimacs.line.starts_with('p') {
+                let mut iter = dimacs.line.split_whitespace();
 
-            // read a line into the string
-            let bytes = self.io.read_line(&mut self.line).unwrap();
+                assert_eq!(iter.next(), Some("p"), "line must start with p");
+                assert_eq!(iter.next(), Some("cnf"), "line must specify cnf");
 
-            // EOF condition
-            if bytes == 0 {
+                dimacs.var_count = iter.next().unwrap().parse::<usize>().unwrap();
+                dimacs.clause_count = iter.next().unwrap().parse::<usize>().unwrap();
                 break;
             }
-
-            // remove all whitespace at beginning and end of string
-            let line = self.line.trim();
-
-            // split the line into tokens, parse them as i32, drop the trailing 0, and the collect
-            // into a Vec<i32> to return
-            if !(line.is_empty() || line.starts_with('c') || line.starts_with('p')) {
-                let clause: Vec<i32> = line
-                    .split_whitespace()
-                    .map(|token| token.parse::<i32>().unwrap())
-                    .take_while(|literal| *literal != 0)
-                    .collect();
-
-                return Some(clause);
-            }
         }
 
-        None
+        dimacs
     }
-}
 
-#[cfg(test)]
-mod test {
-    use super::*;
+    pub fn next(&mut self, literals: &mut Vec<i32>) -> bool {
+        self.line.clear();
+        let count = self.io.read_line(&mut self.line).unwrap();
 
-    #[test]
-    fn simple_01() {
-        let string: Vec<u8> = r#"c
-        c start with comments
-        c
-        c 
-        p cnf 5 3
-        1 -5 4 0
-        -1 5 3 4 0
-        -3 -4 0
-        "#
-        .bytes()
-        .collect();
+        if count == 0 {
+            return false;
+        }
 
-        let mut dimacs = Dimacs::new(&string[..]);
+        literals.clear();
+        literals.extend(
+            self.line
+                .split_whitespace()
+                .map(|tok| tok.parse::<i32>().unwrap())
+                .take_while(|n| *n != 0),
+        );
 
-        assert_eq!(dimacs.next(), Some(vec![1, -5, 4]));
-        assert_eq!(dimacs.next(), Some(vec![-1, 5, 3, 4]));
-        assert_eq!(dimacs.next(), Some(vec![-3, -4]));
-        assert_eq!(dimacs.next(), None);
+        true
+    }
+
+    pub fn var_count(&self) -> usize {
+        self.var_count
+    }
+
+    pub fn clause_count(&self) -> usize {
+        self.clause_count
     }
 }
