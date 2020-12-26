@@ -24,7 +24,7 @@ fn main() -> std::io::Result<()> {
     let io = BufReader::new(lzma);
     let dimacs = Dimacs::new(io);
 
-    let mut solver = Solver::new(dimacs);
+    let mut solver = Solver::from_dimacs(dimacs);
 
     while !solver.finished() {
         solver.step();
