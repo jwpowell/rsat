@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use rsat::dimacs::*;
-use rsat::solver::Solver;
+use rsat::solver::{Solver, Status};
 
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -31,6 +31,18 @@ fn main() -> std::io::Result<()> {
     }
 
     println!("{:?}", solver.status());
+
+    if solver.status() == Status::Sat {
+        let mut literals = Vec::new();
+
+        solver.assignments(&mut literals);
+
+        println!("{:?}", literals);
+
+        let result = solver.check(&literals);
+
+        println!("Check: {}", result);
+    }
 
     Ok(())
 }
